@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, DateTime, Integer, Boolean, ForeignKey, JSON
+from sqlalchemy import Column, String, DateTime, Integer, Boolean, Float, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -14,7 +14,7 @@ class AIAnalysis(Base):
     entities = Column(JSON, nullable=True)
     redaction_boxes = Column(JSON, nullable=True)
     doc_class = Column(String(50), nullable=True)
-    confidence = Column(String(10), nullable=True)
+    confidence = Column(Float, nullable=True)
     needs_review = Column(Boolean, default=False)
     review_count = Column(Integer, default=0)
     processed_at = Column(DateTime(timezone=True), nullable=True)

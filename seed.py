@@ -6,9 +6,9 @@ from datetime import datetime, timezone, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from app.database import SessionLocal, create_all
+from app.database import get_session_factory, create_all
 from app.models import User, Case, Document, DocumentVersion, CustodyEvent, AnchorBatch, AIAnalysis
-from app.services.storage import get_storage
+from app.services.storage_service import get_storage_service
 from app.services.custody_service import compute_event_hash
 from contracts.enums import Role, CaseStatus, CustodyEventType, AnchorBatchStatus
 from passlib.hash import bcrypt
@@ -16,8 +16,8 @@ from passlib.hash import bcrypt
 
 def seed():
     create_all()
-    db = SessionLocal()
-    storage = get_storage()
+    db = get_session_factory()()
+    storage = get_storage_service()
 
     try:
         existing = db.query(User).filter(User.username == "demo_officer").first()
@@ -112,7 +112,7 @@ def seed():
         anchor_batch = AnchorBatch(
             merkle_root="0x" + hashlib.sha256(b"demo-merkle-root").hexdigest(),
             tx_hash="0x" + hashlib.sha256(b"demo-tx-hash").hexdigest(),
-            chain_id="80001",
+            chain_id="80002",
             status=AnchorBatchStatus.CONFIRMED.value,
             confirmed_at=now - timedelta(hours=1),
         )

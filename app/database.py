@@ -41,3 +41,8 @@ def create_all():
 def drop_all():
     engine = get_engine()
     Base.metadata.drop_all(bind=engine)
+
+
+def SessionLocal():
+    """Convenience alias for creating a new database session."""
+    return get_session_factory()()

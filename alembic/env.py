@@ -7,17 +7,21 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.database import Base
+from app.config import settings
 from app.models import User, Case, Document, DocumentVersion, CustodyEvent, AnchorBatch, AIAnalysis
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+# Ensure alembic always connects to the configured database URL (local or docker)
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+
 target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
+    url = settings.DATABASE_URL
     context.configure(
         url=url,
         target_metadata=target_metadata,

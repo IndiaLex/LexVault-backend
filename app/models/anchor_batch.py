@@ -10,7 +10,7 @@ class AnchorBatch(Base):
     __tablename__ = "anchor_batches"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    merkle_root = Column(String(64), nullable=True)
+    merkle_root = Column(String(66), nullable=True)
     tx_hash = Column(String(66), nullable=True)
     chain_id = Column(String(50), nullable=True)
     status = Column(String(20), nullable=False, default=AnchorBatchStatus.PENDING.value)
