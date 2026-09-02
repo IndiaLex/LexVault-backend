@@ -1,4 +1,4 @@
-﻿"""
+"""
 app/routers/auth.py
 -------------------
 Authentication endpoints.
@@ -11,46 +11,67 @@ Endpoints:
   GET  /auth/me      -> UserResponse
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models.user import User
 from app.schemas.auth import LoginRequest, LoginResponse, UserResponse
-from app.services.rbac import get_current_user
+from app.services.rbac import (
+    get_current_user,
+    verify_password,
+    create_access_token,
+)
 
 router = APIRouter()
 
 
 @router.post("/login", response_model=LoginResponse, summary="Login and receive a JWT token")
-def login(body: LoginRequest):
+def login(body: LoginRequest, db: Session = Depends(get_db)):
     """
-    Accepts username + password.
-    Returns a JWT bearer token, the user role, and display name.
+    Authenticates a user with username and password against the database.
+    Verifies bcrypt password hash and returns a signed JWT access token.
 
-    Frontend: store access_token in memory (not localStorage — XSS risk).
-    Include as: Authorization: Bearer <token> on every subsequent request.
-
-    [STUB - Phase B1] Returns hardcoded demo token.
+    Include the token in subsequent requests as:
+        Authorization: Bearer <access_token>
     """
+    user = db.query(User).filter(User.username == body.username).first()
+    if not user or not verify_password(body.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    access_token = create_access_token(
+        data={
+            "sub": str(user.id),
+            "username": user.username,
+            "role": user.role,
+            "name": user.name,
+        }
+    )
+
     return LoginResponse(
-        access_token="stub-jwt-token",
+        access_token=access_token,
         token_type="bearer",
-        role="officer",
-        name="Stub User",
-        user_id="00000000-0000-0000-0000-000000000001",
+        role=user.role,
+        name=user.name,
+        user_id=str(user.id),
     )
 
 
 @router.get("/me", response_model=UserResponse, summary="Get the current authenticated user")
-def me(current_user=Depends(get_current_user)):
+def me(current_user: User = Depends(get_current_user)):
     """
-    Returns the currently authenticated user profile.
-    Requires a valid Bearer token in the Authorization header.
-
-    [STUB - Phase B1] Returns mock user from the rbac stub.
+    Returns the authenticated user's profile from the database.
+    Requires a valid JWT Bearer token in the Authorization header.
     """
-    from datetime import datetime, timezone
     return UserResponse(
-        id=current_user.id,
+        id=str(current_user.id),
         username=current_user.username,
         name=current_user.name,
         role=current_user.role,
-        created_at=datetime.now(timezone.utc),
+        created_at=current_user.created_at,
     )
+
