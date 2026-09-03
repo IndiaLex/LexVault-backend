@@ -1,7 +1,7 @@
 """
 app/services/rbac.py
 --------------------
-Role-Based Access Control & JWT Authentication for SecureDocX.
+Role-Based Access Control & JWT Authentication for IndiaLex.
 
 Provides:
   - Password hashing and verification via bcrypt.

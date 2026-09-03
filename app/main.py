@@ -1,7 +1,7 @@
 """
 app/main.py
 -----------
-FastAPI application entry point for SecureDocX Backend Core.
+FastAPI application entry point for IndiaLex Backend Core.
 
 Startup sequence:
   1. Create all DB tables (idempotent via create_all).
@@ -54,9 +54,9 @@ async def lifespan(app: FastAPI):
 # ---------------------------------------------------------------------------
 
 app = FastAPI(
-    title="SecureDocX - Backend Core",
+    title="IndiaLex - Backend Core",
     description=(
-        "Document Management System for SecureDocX (SIH 2026).\n\n"
+        "Document Management System for IndiaLex (SIH 2026).\n\n"
         "**Talks to:**\n"
         "- Frontend (serves REST)\n"
         "- Backend AI (calls /ai/process)\n"

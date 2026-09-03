@@ -228,6 +228,8 @@ async def verify_anchor_direct(
     request: Request,
     hash: str = Query(
         ...,
+        min_length=64,
+        max_length=64,
         description="SHA-256 hex string to verify",
     ),
     current_user: User = Depends(get_current_user),
@@ -275,6 +277,8 @@ async def verify_anchor(
     request: Request,
     hash: str = Query(
         ...,
+        min_length=64,
+        max_length=64,
         description="SHA-256 hex string of the document to verify (64 chars, no 0x prefix)",
     ),
     current_user: User = Depends(get_current_user),

@@ -1,6 +1,6 @@
-# SecureDocX — Backend Core (Service 2)
+# IndiaLex — Backend Core (Service 2)
 
-FastAPI + PostgreSQL + MinIO document management system for SecureDocX (SIH 2026).
+FastAPI + PostgreSQL + MinIO document management system for IndiaLex (SIH 2026).
 
 ---
 
