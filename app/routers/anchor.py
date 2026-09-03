@@ -42,7 +42,7 @@ IMPORTANT for Blockchain team:
 import asyncio
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -59,8 +59,9 @@ from app.schemas.anchor import (
 from app.services.blockchain_client import submit_hashes, get_batch_status, verify_hash
 from app.services.custody_service import record_event
 from app.services.rbac import get_current_user
+from app.services.rate_limiter import rate_limit_verify
 from app.services.storage_service import get_storage_service
-from contracts.enums import AnchorBatchStatus, CustodyEventType
+from contracts.enums import AnchorBatchStatus, CustodyEventType, Role
 
 router = APIRouter()
 
@@ -127,7 +128,7 @@ async def trigger_anchor(
 
     Raises 404 if the case does not exist.
     """
-    # Verify case exists
+    # 1. Verify case exists
     case = db.query(Case).filter(Case.id == case_id).first()
     if case is None:
         raise HTTPException(
@@ -135,7 +136,27 @@ async def trigger_anchor(
             detail=f"Case '{case_id}' not found",
         )
 
-    # Collect unanchored documents
+    # 2. RBAC check: only officer, supervisor, admin can trigger anchoring
+    allowed_roles = [Role.OFFICER.value, Role.SUPERVISOR.value, Role.ADMIN.value]
+    if current_user.role not in allowed_roles:
+        record_event(
+            db=db,
+            case_id=case_id,
+            event_type=CustodyEventType.ACCESS_DENIED.value,
+            actor_id=current_user.id,
+            metadata={
+                "action": "trigger_anchor",
+                "role": current_user.role,
+                "reason": "insufficient_role",
+            },
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access forbidden: role '{current_user.role}' is not authorized to trigger anchor batches. Allowed: {allowed_roles}",
+        )
+
+    # 3. Collect unanchored documents
     unanchored = _unanchored_documents(db, case_id)
     hashes = [d.sha256 for d in unanchored]
 
@@ -270,6 +291,7 @@ async def get_anchor_batch(
 )
 async def verify_anchor(
     batch_id: str,
+    request: Request,
     hash: str = Query(
         ...,
         description="SHA-256 hex string of the document to verify (64 chars, no 0x prefix)",
@@ -295,6 +317,9 @@ async def verify_anchor(
 
     Raises 404 if the batch or document is not found.
     """
+    # 0. Rate limiting (30 verifications / min per user)
+    rate_limit_verify(request, current_user)
+
     # Verify batch exists
     batch = db.query(AnchorBatch).filter(AnchorBatch.id == batch_id).first()
     if batch is None:

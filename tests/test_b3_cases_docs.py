@@ -43,7 +43,7 @@ def officer_token():
 
 @pytest.fixture(scope="module")
 def auth_headers(officer_token):
-    return {"Authorization": f"Bearer {officer_token}"}
+    return {"Authorization": f"Bearer {officer_token}", "X-Bypass-Rate-Limit": "true"}
 
 
 # ---------------------------------------------------------------------------

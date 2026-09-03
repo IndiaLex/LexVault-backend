@@ -22,6 +22,7 @@ class Settings(BaseSettings):
 
     MAX_UPLOAD_SIZE_MB: int = 50
     ALLOWED_MIME_TYPES: str = "application/pdf,image/jpeg,image/png,image/tiff"
+    RATE_LIMIT_ENABLED: bool = True
 
     class Config:
         env_file = ".env"

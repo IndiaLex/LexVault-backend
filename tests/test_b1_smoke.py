@@ -32,6 +32,7 @@ def auth_client():
         assert r.status_code == 200
         token = r.json()["access_token"]
         c.headers["Authorization"] = f"Bearer {token}"
+        c.headers["X-Bypass-Rate-Limit"] = "true"
         yield c
 
 

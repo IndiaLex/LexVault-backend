@@ -26,8 +26,8 @@ from app.database import get_db
 from app.models.case import Case
 from app.models.user import User
 from app.schemas.case import CaseCreate, CaseResponse
-from app.services.rbac import get_current_user
-from contracts.enums import CaseStatus
+from app.services.rbac import get_current_user, require_role
+from contracts.enums import CaseStatus, Role
 
 router = APIRouter()
 
@@ -40,7 +40,7 @@ router = APIRouter()
 )
 def create_case(
     body: CaseCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role(Role.OFFICER.value, Role.SUPERVISOR.value, Role.ADMIN.value)),
     db: Session = Depends(get_db),
 ):
     """

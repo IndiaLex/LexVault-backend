@@ -43,7 +43,7 @@ Contract for Frontend team:
 import asyncio
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
@@ -56,9 +56,10 @@ from app.schemas.document import DocumentDownloadResponse, DocumentResponse, Doc
 from app.services.ai_client import process_document
 from app.services.custody_service import record_event
 from app.services.rbac import get_current_user
+from app.services.rate_limiter import rate_limit_upload
 from app.services.storage_service import get_storage_service
 from app.config import settings
-from contracts.enums import CustodyEventType
+from contracts.enums import CustodyEventType, Role
 
 router = APIRouter()
 
@@ -139,6 +140,7 @@ def _ai_dispatch_task(document_id: str, storage_key: str, case_id: str, actor_id
 async def upload_document(
     case_id: str,
     background_tasks: BackgroundTasks,
+    request: Request,
     file: UploadFile = File(..., description="PDF, JPEG, PNG, or TIFF only. Max 50 MB."),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -149,6 +151,9 @@ async def upload_document(
     Response is immediate (<2s). Poll GET /cases/:id/graph to see
     OCR_COMPLETE, NER_COMPLETE, and REDACTED nodes appear.
     """
+    # 0. Rate limiting (10 uploads / min per user)
+    rate_limit_upload(request, current_user)
+
     # 1. Verify the case exists
     case = db.query(Case).filter(Case.id == case_id).first()
     if case is None:
@@ -157,7 +162,27 @@ async def upload_document(
             detail=f"Case '{case_id}' not found",
         )
 
-    # 2. Read file bytes
+    # 2. RBAC check: Only officer, forensic, supervisor, admin can upload (Auditor cannot)
+    allowed_roles = [Role.OFFICER.value, Role.FORENSIC.value, Role.SUPERVISOR.value, Role.ADMIN.value]
+    if current_user.role not in allowed_roles:
+        record_event(
+            db=db,
+            case_id=case_id,
+            event_type=CustodyEventType.ACCESS_DENIED.value,
+            actor_id=current_user.id,
+            metadata={
+                "action": "upload_document",
+                "role": current_user.role,
+                "reason": "insufficient_role",
+            },
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access forbidden: role '{current_user.role}' is not authorized to upload documents. Allowed: {allowed_roles}",
+        )
+
+    # 3. Read file bytes
     data = await file.read()
 
     # 3. Validate MIME type

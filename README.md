@@ -124,7 +124,8 @@ app/
     custody_service.py     Event recording + graph construction
     ai_client.py           Calls Backend AI (mockable)
     blockchain_client.py   Calls Blockchain Service (mockable)
-    rbac.py                FastAPI auth dependency
+    rbac.py                FastAPI auth & role-based access control
+    rate_limiter.py        Sliding-window rate limiter (10 uploads/min, 30 verifies/min)
 contracts/
   enums.py         Shared enums (CustodyEventType, Role, etc.)
   entities.py      Shared Pydantic schemas (AI contract, anchor contract)
@@ -133,12 +134,26 @@ seed.py            Demo data generator
 
 ---
 
-## API docs
+## API Endpoints Reference
 
-Full interactive docs at http://localhost:8000/docs once the service is running.
+Full interactive docs are available at **http://localhost:8000/docs** once the service is running.
 
-For cross-team integration details see the Backend Core Integration Guide
-(shared separately with all teams).
+| Method | Endpoint | Allowed Roles | Description |
+|---|---|---|---|
+| `GET` | `/health` | Public | Live health check (DB, MinIO, Mock flags) |
+| `POST` | `/auth/login` | Public | Authenticate user, return JWT access token |
+| `GET` | `/auth/me` | All Roles | Decode JWT, return current user profile |
+| `POST` | `/cases` | `officer`, `supervisor`, `admin` | Create a new case |
+| `GET` | `/cases` | All Roles | List all cases in descending chronological order |
+| `GET` | `/cases/{id}` | All Roles | Get case details by UUID |
+| `POST` | `/cases/{id}/documents` | `officer`, `forensic`, `supervisor`, `admin` | Upload document ($\le 50\text{ MB}$, PDF/PNG/JPG/TIFF), hash, store in MinIO, record `UPLOADED` event, trigger async AI |
+| `GET` | `/documents/{id}` | All Roles | Get document metadata by UUID |
+| `GET` | `/documents/{id}/download` | All Roles | Generate 15-minute presigned MinIO URL, record `DOWNLOADED` event |
+| `GET` | `/cases/{id}/graph` | All Roles | Get visual DAG graph for case timeline (dagre/React Flow format) |
+| `GET` | `/cases/{id}/custody-log` | All Roles | Get flat chronological custody audit log (optional `?type=` filter) |
+| `POST` | `/cases/{id}/anchor` | `officer`, `supervisor`, `admin` | Batch anchor unanchored documents to Polygon Amoy |
+| `GET` | `/anchors/{batch_id}` | All Roles | Get anchor batch status (`pending`, `confirmed`, `failed`) |
+| `GET` | `/anchors/{batch_id}/verify` | All Roles | Two-stage tamper verification: Stage 1 local MinIO re-hash, Stage 2 on-chain Merkle proof |
 
 ---
 
@@ -159,3 +174,4 @@ For cross-team integration details see the Backend Core Integration Guide
 | `MOCK_BLOCKCHAIN_SERVICE` | `true` | Use mock blockchain responses |
 | `MAX_UPLOAD_SIZE_MB` | `50` | Max file upload size |
 | `ALLOWED_MIME_TYPES` | `application/pdf,image/jpeg,image/png,image/tiff` | Accepted file types |
+| `RATE_LIMIT_ENABLED` | `true` | Enable/disable in-memory sliding-window rate limiting |

@@ -41,7 +41,7 @@ def auth_headers():
     )
     assert resp.status_code == 200, f"Login failed: {resp.text}"
     token = resp.json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
+    return {"Authorization": f"Bearer {token}", "X-Bypass-Rate-Limit": "true"}
 
 
 # ---------------------------------------------------------------------------
