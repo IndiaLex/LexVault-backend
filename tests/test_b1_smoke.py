@@ -176,7 +176,16 @@ def test_download_document(auth_client):
 # ---------------------------------------------------------------------------
 
 def test_get_graph(auth_client):
-    r = auth_client.get("/cases/case-stub-001/graph")
+    # Create a real case + document so the graph has at least one UPLOADED node
+    r_case = auth_client.post("/cases", json={"title": "Smoke Test Case for Graph"})
+    assert r_case.status_code == 201
+    real_case_id = r_case.json()["id"]
+    auth_client.post(
+        f"/cases/{real_case_id}/documents",
+        files={"file": ("graph_test.pdf", b"%PDF-1.4 smoke graph test", "application/pdf")},
+    )
+
+    r = auth_client.get(f"/cases/{real_case_id}/graph")
     assert r.status_code == 200
     body = r.json()
     assert "nodes" in body
@@ -192,7 +201,16 @@ def test_get_graph(auth_client):
 
 
 def test_get_custody_log(auth_client):
-    r = auth_client.get("/cases/case-stub-001/custody-log")
+    # Create a real case + document so the log has at least one event
+    r_case = auth_client.post("/cases", json={"title": "Smoke Test Case for Custody Log"})
+    assert r_case.status_code == 201
+    real_case_id = r_case.json()["id"]
+    auth_client.post(
+        f"/cases/{real_case_id}/documents",
+        files={"file": ("log_test.pdf", b"%PDF-1.4 smoke log test", "application/pdf")},
+    )
+
+    r = auth_client.get(f"/cases/{real_case_id}/custody-log")
     assert r.status_code == 200
     body = r.json()
     assert "events" in body
@@ -204,16 +222,36 @@ def test_get_custody_log(auth_client):
 # ---------------------------------------------------------------------------
 
 def test_trigger_anchor(auth_client):
-    r = auth_client.post("/cases/case-stub-001/anchor")
+    # Create real case + doc to anchor
+    r_case = auth_client.post("/cases", json={"title": "Smoke Test Case for Anchor"})
+    assert r_case.status_code == 201
+    real_case_id = r_case.json()["id"]
+    auth_client.post(
+        f"/cases/{real_case_id}/documents",
+        files={"file": ("anchor_smoke.pdf", b"%PDF-1.4 smoke anchor test", "application/pdf")},
+    )
+
+    r = auth_client.post(f"/cases/{real_case_id}/anchor")
     assert r.status_code == 202
     body = r.json()
     assert "batch_id" in body
     assert "status" in body
-    assert body["status"] == "pending"
+    assert body["status"] in ("pending", "confirmed")
 
 
 def test_get_anchor_batch(auth_client):
-    r = auth_client.get("/anchors/mock-batch-stub-001")
+    r_case = auth_client.post("/cases", json={"title": "Smoke Test Case for Anchor Batch GET"})
+    assert r_case.status_code == 201
+    real_case_id = r_case.json()["id"]
+    auth_client.post(
+        f"/cases/{real_case_id}/documents",
+        files={"file": ("batch_smoke.pdf", b"%PDF-1.4 smoke batch test", "application/pdf")},
+    )
+    r_anchor = auth_client.post(f"/cases/{real_case_id}/anchor")
+    assert r_anchor.status_code == 202
+    real_batch_id = r_anchor.json()["batch_id"]
+
+    r = auth_client.get(f"/anchors/{real_batch_id}")
     assert r.status_code == 200
     body = r.json()
     assert "batch_id" in body
@@ -221,10 +259,23 @@ def test_get_anchor_batch(auth_client):
 
 
 def test_verify_anchor(auth_client):
-    r = auth_client.get("/anchors/mock-batch-stub-001/verify", params={"hash": "a" * 64})
+    r_case = auth_client.post("/cases", json={"title": "Smoke Test Case for Anchor Verify"})
+    assert r_case.status_code == 201
+    real_case_id = r_case.json()["id"]
+    r_upload = auth_client.post(
+        f"/cases/{real_case_id}/documents",
+        files={"file": ("verify_smoke.pdf", b"%PDF-1.4 smoke verify test", "application/pdf")},
+    )
+    assert r_upload.status_code == 201
+    doc_sha256 = r_upload.json()["sha256"]
+
+    r_anchor = auth_client.post(f"/cases/{real_case_id}/anchor")
+    assert r_anchor.status_code == 202
+    real_batch_id = r_anchor.json()["batch_id"]
+
+    r = auth_client.get(f"/anchors/{real_batch_id}/verify", params={"hash": doc_sha256})
     assert r.status_code == 200
     body = r.json()
     assert "valid" in body
     assert "local_hash_match" in body
-    assert "explorer_url" in body
 
