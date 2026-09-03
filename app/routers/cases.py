@@ -1,79 +1,136 @@
-﻿"""
+"""
 app/routers/cases.py
 --------------------
-Case CRUD endpoints.
-
-Phase B1: stubs.
-Phase B3: real DB operations + RBAC + custody event recording.
+Case CRUD endpoints — Phase B3: real DB operations.
 
 Endpoints:
-  POST /cases          -> CaseResponse
+  POST /cases          -> CaseResponse (201)
   GET  /cases          -> List[CaseResponse]
-  GET  /cases/:id      -> CaseResponse
+  GET  /cases/:id      -> CaseResponse (404 if not found)
+
+RBAC:
+  All authenticated users can create and view cases.
+  Granular role-based filtering (officer sees own cases only) is Phase B6.
+
+Custody events:
+  No CASE_OPENED enum exists in contracts/enums.py (shared contract — cannot
+  be modified unilaterally). Custody trail starts with the first UPLOADED
+  document event. Case creation is a plain DB insert.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 from typing import List
-from datetime import datetime, timezone
 
+from app.database import get_db
+from app.models.case import Case
+from app.models.user import User
 from app.schemas.case import CaseCreate, CaseResponse
 from app.services.rbac import get_current_user
+from contracts.enums import CaseStatus
 
 router = APIRouter()
 
 
-@router.post("", response_model=CaseResponse, status_code=201, summary="Create a new case")
-def create_case(body: CaseCreate, current_user=Depends(get_current_user)):
+@router.post(
+    "",
+    response_model=CaseResponse,
+    status_code=201,
+    summary="Create a new case",
+)
+def create_case(
+    body: CaseCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
-    Creates a new case and returns its record.
-    The requesting officer becomes the case creator.
+    Creates a new case. The requesting user becomes the case creator.
 
-    [STUB - Phase B1]
+    Any authenticated role can create a case.
+    Returns the persisted Case record with a real UUID.
     """
-    return CaseResponse(
-        id="case-stub-001",
+    case = Case(
         title=body.title,
-        status="open",
+        status=CaseStatus.OPEN.value,
         created_by=current_user.id,
+    )
+    db.add(case)
+    db.commit()
+    db.refresh(case)
+
+    return CaseResponse(
+        id=str(case.id),
+        title=case.title,
+        status=case.status,
+        created_by=str(case.created_by),
         creator_name=current_user.name,
-        created_at=datetime.now(timezone.utc),
+        created_at=case.created_at,
     )
 
 
-@router.get("", response_model=List[CaseResponse], summary="List all accessible cases")
-def list_cases(current_user=Depends(get_current_user)):
+@router.get(
+    "",
+    response_model=List[CaseResponse],
+    summary="List all accessible cases",
+)
+def list_cases(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
-    Returns cases visible to the current user based on role:
-    - officer: own cases only
-    - supervisor: department cases
-    - auditor / admin: all cases
+    Returns all cases visible to the current user.
 
-    [STUB - Phase B1]
+    Phase B3: all authenticated users see all cases.
+    Phase B6: officer sees own cases, supervisor sees department cases,
+              auditor/admin see all.
     """
-    return [
-        CaseResponse(
-            id="case-stub-001",
-            title="FIR-2026-0417 - Stub Case",
-            status="open",
-            created_by=current_user.id,
-            creator_name=current_user.name,
-            created_at=datetime.now(timezone.utc),
+    cases = db.query(Case).order_by(Case.created_at.desc()).all()
+
+    result = []
+    for c in cases:
+        creator_name = c.creator.name if c.creator else None
+        result.append(
+            CaseResponse(
+                id=str(c.id),
+                title=c.title,
+                status=c.status,
+                created_by=str(c.created_by),
+                creator_name=creator_name,
+                created_at=c.created_at,
+            )
         )
-    ]
+    return result
 
 
-@router.get("/{case_id}", response_model=CaseResponse, summary="Get a single case by ID")
-def get_case(case_id: str, current_user=Depends(get_current_user)):
+@router.get(
+    "/{case_id}",
+    response_model=CaseResponse,
+    summary="Get a single case by ID",
+)
+def get_case(
+    case_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
-    Returns full case detail including status and creator.
+    Returns full case detail.
 
-    [STUB - Phase B1]
+    Raises 404 if the case does not exist.
     """
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if case is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Case '{case_id}' not found",
+        )
+
+    creator_name = case.creator.name if case.creator else None
+
     return CaseResponse(
-        id=case_id,
-        title="FIR-2026-0417 - Stub Case",
-        status="open",
-        created_by=current_user.id,
-        creator_name=current_user.name,
-        created_at=datetime.now(timezone.utc),
+        id=str(case.id),
+        title=case.title,
+        status=case.status,
+        created_by=str(case.created_by),
+        creator_name=creator_name,
+        created_at=case.created_at,
     )

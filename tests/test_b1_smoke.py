@@ -98,10 +98,15 @@ def test_list_cases(auth_client):
 
 
 def test_get_case(auth_client):
-    r = auth_client.get("/cases/case-stub-001")
+    # Endpoints now hit the real DB — create a real case and fetch it by real UUID
+    r_create = auth_client.post("/cases", json={"title": "Smoke Test Case for GET"})
+    assert r_create.status_code == 201
+    real_case_id = r_create.json()["id"]
+
+    r = auth_client.get(f"/cases/{real_case_id}")
     assert r.status_code == 200
     body = r.json()
-    assert body["id"] == "case-stub-001"
+    assert body["id"] == real_case_id
 
 
 # ---------------------------------------------------------------------------
@@ -109,8 +114,13 @@ def test_get_case(auth_client):
 # ---------------------------------------------------------------------------
 
 def test_upload_document(auth_client):
+    # Create a real case to upload into
+    r_case = auth_client.post("/cases", json={"title": "Smoke Test Case for Upload"})
+    assert r_case.status_code == 201
+    real_case_id = r_case.json()["id"]
+
     r = auth_client.post(
-        "/cases/case-stub-001/documents",
+        f"/cases/{real_case_id}/documents",
         files={"file": ("test.pdf", b"%PDF-1.4 test content", "application/pdf")},
     )
     assert r.status_code == 201
@@ -121,7 +131,19 @@ def test_upload_document(auth_client):
 
 
 def test_get_document(auth_client):
-    r = auth_client.get("/documents/doc-stub-001")
+    # Create a real case + document, then fetch the document metadata
+    r_case = auth_client.post("/cases", json={"title": "Smoke Test Case for Doc GET"})
+    assert r_case.status_code == 201
+    real_case_id = r_case.json()["id"]
+
+    r_upload = auth_client.post(
+        f"/cases/{real_case_id}/documents",
+        files={"file": ("get_test.pdf", b"%PDF-1.4 smoke get test", "application/pdf")},
+    )
+    assert r_upload.status_code == 201
+    real_doc_id = r_upload.json()["document_id"]
+
+    r = auth_client.get(f"/documents/{real_doc_id}")
     assert r.status_code == 200
     body = r.json()
     assert "id" in body
@@ -130,7 +152,19 @@ def test_get_document(auth_client):
 
 
 def test_download_document(auth_client):
-    r = auth_client.get("/documents/doc-stub-001/download")
+    # Create a real case + document, then get a presigned download URL
+    r_case = auth_client.post("/cases", json={"title": "Smoke Test Case for Download"})
+    assert r_case.status_code == 201
+    real_case_id = r_case.json()["id"]
+
+    r_upload = auth_client.post(
+        f"/cases/{real_case_id}/documents",
+        files={"file": ("dl_test.pdf", b"%PDF-1.4 smoke download test", "application/pdf")},
+    )
+    assert r_upload.status_code == 201
+    real_doc_id = r_upload.json()["document_id"]
+
+    r = auth_client.get(f"/documents/{real_doc_id}/download")
     assert r.status_code == 200
     body = r.json()
     assert "presigned_url" in body
