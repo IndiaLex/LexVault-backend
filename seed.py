@@ -60,10 +60,69 @@ def seed():
         db.add_all(users)
         db.flush()
 
+        case_dossier = {
+            "firNumber": "FIR-2026-0417",
+            "policeStation": "Civil Lines Police Station, Central District",
+            "district": "Central District, New Delhi",
+            "actsSections": ["IPC 354", "IPC 452", "BNS 74"],
+            "dateOfOccurrence": "2026-09-01 20:30",
+            "dateReported": "2026-09-02 09:15",
+            "investigatingOfficer": "Inspector Sharma",
+            "status": "Under Investigation",
+            "complainant": {
+                "name": "Smt. Sunita Devi",
+                "contact": "+91 98101 23456",
+                "address": "House No. 42, Civil Lines, Central District, New Delhi",
+            },
+            "victim": {
+                "alias": "Victim Alpha-1",
+                "age": 29,
+                "gender": "Female",
+                "isProtected": True,
+                "maskedIdentityRef": "REF-228A-DEL-2026-0417",
+            },
+            "suspects": [
+                {
+                    "name": "Rakesh Kumar",
+                    "alias": "Rocky",
+                    "status": "Under Interrogation",
+                    "details": "Detained near Kashmere Gate terminal; forensic device seized for analysis.",
+                }
+            ],
+            "diaryEntries": [
+                {
+                    "dayNumber": 1,
+                    "date": "2026-09-02",
+                    "time": "09:30",
+                    "activity": "FIR Registered upon formal complaint by IO Inspector Sharma. Scene of crime cordoned off.",
+                    "conductedBy": "Inspector Sharma",
+                    "outcome": "Spot inspection completed; rough site map prepared; CCTV footage seized.",
+                },
+                {
+                    "dayNumber": 2,
+                    "date": "2026-09-03",
+                    "time": "14:15",
+                    "activity": "Suspect Rakesh Kumar interrogated; mobile device forwarded to FSL under sealed parcel.",
+                    "conductedBy": "Inspector Sharma",
+                    "outcome": "Device entered in Malkhana register under Exhibit M-01.",
+                },
+            ],
+            "propertyRegister": [
+                {
+                    "propertyId": "EX-2026-01",
+                    "description": "One Android Smartphone (Samsung S21) in tamper-evident sealed tamper pouch",
+                    "seizedFrom": "Rakesh Kumar (Suspect)",
+                    "custodyLocation": "Forensic Science Lab (FSL)",
+                    "sealIntact": True,
+                }
+            ],
+        }
+
         case = Case(
             title="FIR-2026-0417 — Suspected Financial Fraud at Vertex Corp",
             status=CaseStatus.UNDER_INVESTIGATION.value,
             created_by=users[0].id,
+            dossier=case_dossier,
         )
         db.add(case)
         db.flush()

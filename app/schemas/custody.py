@@ -1,4 +1,4 @@
-﻿"""
+"""
 app/schemas/custody.py
 ----------------------
 Pydantic schemas for the custody log and case history graph.
@@ -34,8 +34,22 @@ class GraphNode(BaseModel):
 
 
 class GraphEdge(BaseModel):
-    source: str = Field(alias="from")  # "from" is a Python keyword; use alias
-    target: str = Field(alias="to")
+    id: Optional[str] = None
+    source: Optional[str] = None
+    target: Optional[str] = None
+    from_node: Optional[str] = Field(default=None, alias="from")
+    to_node: Optional[str] = Field(default=None, alias="to")
+
+    def __init__(self, **data):
+        s = data.get("source") or data.get("from")
+        t = data.get("target") or data.get("to")
+        data["source"] = s
+        data["target"] = t
+        data["from"] = s
+        data["to"] = t
+        if "id" not in data and s and t:
+            data["id"] = f"edge-{s}-{t}"
+        super().__init__(**data)
 
     class Config:
         populate_by_name = True

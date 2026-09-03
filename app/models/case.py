@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, DateTime, ForeignKey
+from sqlalchemy import Column, String, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from app.database import Base
 from contracts.enums import CaseStatus
@@ -14,6 +14,7 @@ class Case(Base):
     status = Column(String(30), nullable=False, default=CaseStatus.OPEN.value)
     created_by = Column(String(36), ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    dossier = Column(JSON, nullable=True)
 
     creator = relationship("User", back_populates="cases")
     documents = relationship("Document", back_populates="case", cascade="all, delete-orphan")

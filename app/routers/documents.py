@@ -359,3 +359,97 @@ def download_document(
         presigned_url=presigned_url,
         expires_in_minutes=15,
     )
+
+
+# ---------------------------------------------------------------------------
+# Case documents list endpoint
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/cases/{case_id}/documents",
+    response_model=list[DocumentResponse],
+    summary="List all documents for a case",
+)
+def list_case_documents(
+    case_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns metadata for all documents uploaded to a case.
+    """
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if case is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Case '{case_id}' not found",
+        )
+
+    documents = db.query(Document).filter(Document.case_id == case_id).all()
+    return [
+        DocumentResponse(
+            id=str(doc.id),
+            case_id=str(doc.case_id),
+            filename=doc.filename,
+            storage_key=doc.storage_key,
+            sha256=doc.sha256,
+            mime=doc.mime,
+            size=doc.size,
+            uploaded_by=str(doc.uploaded_by),
+            uploaded_at=doc.uploaded_at,
+            current_version=doc.current_version,
+        )
+        for doc in documents
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Document redactions endpoint
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/documents/{document_id}/redactions",
+    summary="Get redaction coordinate boxes for a document",
+)
+def get_document_redactions(
+    document_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns normalized coordinate bounding boxes for detected PII in a document.
+    """
+    analysis = db.query(AIAnalysis).filter(AIAnalysis.document_id == document_id).first()
+    if analysis and analysis.redaction_boxes:
+        return analysis.redaction_boxes
+    return []
+
+
+# ---------------------------------------------------------------------------
+# Direct local content streaming fallback
+# ---------------------------------------------------------------------------
+
+from fastapi.responses import Response
+
+@router.get(
+    "/documents/content/{storage_key:path}",
+    summary="Direct file content streaming fallback",
+)
+def stream_document_content(
+    storage_key: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Streams file bytes directly (used when MinIO presigned URLs fallback to local storage).
+    """
+    storage = get_storage_service()
+    try:
+        data = storage.download_file(storage_key)
+        doc = db.query(Document).filter(Document.storage_key == storage_key).first()
+        media_type = doc.mime if doc else "application/octet-stream"
+        return Response(content=data, media_type=media_type)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"File not found: {exc}",
+        )

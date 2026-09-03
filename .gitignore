@@ -32,3 +32,7 @@ Thumbs.db
 
 # Docker
 docker-compose.override.yml
+
+# Local Dev Data
+*.db
+local_storage/

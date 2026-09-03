@@ -14,7 +14,18 @@ _session_factory = None
 def get_engine():
     global _engine
     if _engine is None:
-        _engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+        db_url = settings.DATABASE_URL
+        if db_url.startswith("sqlite"):
+            _engine = create_engine(db_url, connect_args={"check_same_thread": False})
+        else:
+            try:
+                test_engine = create_engine(db_url, pool_pre_ping=True)
+                with test_engine.connect():
+                    pass
+                _engine = test_engine
+            except Exception as exc:
+                print(f"[database] WARNING: Could not connect to {db_url} ({exc}). Falling back to SQLite.")
+                _engine = create_engine("sqlite:///./securedocx.db", connect_args={"check_same_thread": False})
     return _engine
 
 

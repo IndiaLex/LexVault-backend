@@ -216,73 +216,54 @@ async def trigger_anchor(
 
 
 # ---------------------------------------------------------------------------
-# Get anchor batch status
+# Verify anchor
 # ---------------------------------------------------------------------------
 
 @router.get(
-    "/anchors/{batch_id}",
-    response_model=AnchorBatchStatusResponse,
-    summary="Get the status of an anchor batch",
+    "/anchors/verify",
+    response_model=AnchorVerifyResponse,
+    summary="Verify a document or event hash directly by discovering its batch",
 )
-async def get_anchor_batch(
-    batch_id: str,
+async def verify_anchor_direct(
+    request: Request,
+    hash: str = Query(
+        ...,
+        description="SHA-256 hex string to verify",
+    ),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
-    Polls the live status of a previously triggered anchor batch.
-    Status values: pending | confirmed | failed
-
-    On confirmed: merkle_root, tx_hash, block_number are populated.
-    This endpoint first checks the DB, then polls the Blockchain Service
-    to pick up any status updates (confirmed, failed) since last checked.
-
-    Raises 404 if the batch_id does not exist in the DB.
+    Direct hash verification for the frontend NodeInspector drawer.
+    Finds the associated anchor batch or latest confirmed batch automatically.
     """
-    batch = db.query(AnchorBatch).filter(AnchorBatch.id == batch_id).first()
-    if batch is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Anchor batch '{batch_id}' not found",
+    batch_id = None
+    event = (
+        db.query(CustodyEvent)
+        .filter(
+            (CustodyEvent.event_hash == hash) | (CustodyEvent.anchor_batch_id.isnot(None))
         )
-
-    # If already confirmed or failed in DB, return cached status
-    if batch.status in (AnchorBatchStatus.CONFIRMED.value, AnchorBatchStatus.FAILED.value):
-        return AnchorBatchStatusResponse(
-            batch_id=str(batch.id),
-            status=batch.status,
-            merkle_root=batch.merkle_root,
-            tx_hash=batch.tx_hash,
-            chain_id=batch.chain_id,
-            confirmed_at=batch.confirmed_at.isoformat() if batch.confirmed_at else None,
-        )
-
-    # Still pending — poll blockchain service for update
-    chain_result = await get_batch_status(batch_id)
-    if chain_result and chain_result.get("status") == "confirmed":
-        # Update DB with confirmed data
-        batch.status = AnchorBatchStatus.CONFIRMED.value
-        batch.merkle_root = chain_result.get("merkle_root")
-        batch.tx_hash = chain_result.get("tx_hash")
-        batch.chain_id = chain_result.get("chain_id", "80002")
-        batch.confirmed_at = datetime.now(timezone.utc)
-        db.commit()
-        db.refresh(batch)
-
-    return AnchorBatchStatusResponse(
-        batch_id=str(batch.id),
-        status=batch.status,
-        merkle_root=batch.merkle_root,
-        tx_hash=batch.tx_hash,
-        chain_id=batch.chain_id,
-        block_number=chain_result.get("block_number") if chain_result else None,
-        confirmed_at=batch.confirmed_at.isoformat() if batch.confirmed_at else None,
+        .filter(CustodyEvent.anchor_batch_id.isnot(None))
+        .first()
     )
+    if event and event.anchor_batch_id:
+        batch_id = str(event.anchor_batch_id)
 
+    if not batch_id:
+        latest_batch = db.query(AnchorBatch).order_by(AnchorBatch.created_at.desc()).first()
+        if latest_batch:
+            batch_id = str(latest_batch.id)
 
-# ---------------------------------------------------------------------------
-# Verify anchor
-# ---------------------------------------------------------------------------
+    if not batch_id:
+        return AnchorVerifyResponse(
+            valid=False,
+            local_hash_match=True,
+            chain_valid=False,
+            reason="unanchored",
+        )
+
+    return await verify_anchor(batch_id=batch_id, request=request, hash=hash, current_user=current_user, db=db)
+
 
 @router.get(
     "/anchors/{batch_id}/verify",
@@ -295,8 +276,6 @@ async def verify_anchor(
     hash: str = Query(
         ...,
         description="SHA-256 hex string of the document to verify (64 chars, no 0x prefix)",
-        min_length=64,
-        max_length=64,
     ),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -341,6 +320,12 @@ async def verify_anchor(
     else:
         document = db.query(Document).filter(Document.sha256 == hash).first()
 
+    # If hash belongs to an event, resolve to that event's document
+    if document is None:
+        event = db.query(CustodyEvent).filter(CustodyEvent.event_hash == hash).first()
+        if event and event.document:
+            document = event.document
+
     if document is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -349,7 +334,7 @@ async def verify_anchor(
 
     # ---- Stage 1: Local tamper detection ----
     storage = get_storage_service()
-    tamper_result = storage.detect_tampering(document.storage_key, hash)
+    tamper_result = storage.detect_tampering(document.storage_key, document.sha256)
     local_hash_match = not tamper_result["is_tampered"]
 
     if not local_hash_match:
@@ -432,3 +417,69 @@ async def verify_anchor(
         explorer_url=explorer_url,
         reason=reason,
     )
+
+
+# ---------------------------------------------------------------------------
+# Get anchor batch status
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/anchors/{batch_id}",
+    response_model=AnchorBatchStatusResponse,
+    summary="Get the status of an anchor batch",
+)
+async def get_anchor_batch(
+    batch_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Polls the live status of a previously triggered anchor batch.
+    Status values: pending | confirmed | failed
+
+    On confirmed: merkle_root, tx_hash, block_number are populated.
+    This endpoint first checks the DB, then polls the Blockchain Service
+    to pick up any status updates (confirmed, failed) since last checked.
+
+    Raises 404 if the batch_id does not exist in the DB.
+    """
+    batch = db.query(AnchorBatch).filter(AnchorBatch.id == batch_id).first()
+    if batch is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Anchor batch '{batch_id}' not found",
+        )
+
+    # If already confirmed or failed in DB, return cached status
+    if batch.status in (AnchorBatchStatus.CONFIRMED.value, AnchorBatchStatus.FAILED.value):
+        return AnchorBatchStatusResponse(
+            batch_id=str(batch.id),
+            status=batch.status,
+            merkle_root=batch.merkle_root,
+            tx_hash=batch.tx_hash,
+            chain_id=batch.chain_id,
+            confirmed_at=batch.confirmed_at.isoformat() if batch.confirmed_at else None,
+        )
+
+    # Still pending — poll blockchain service for update
+    chain_result = await get_batch_status(batch_id)
+    if chain_result and chain_result.get("status") == "confirmed":
+        # Update DB with confirmed data
+        batch.status = AnchorBatchStatus.CONFIRMED.value
+        batch.merkle_root = chain_result.get("merkle_root")
+        batch.tx_hash = chain_result.get("tx_hash")
+        batch.chain_id = chain_result.get("chain_id", "80002")
+        batch.confirmed_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(batch)
+
+    return AnchorBatchStatusResponse(
+        batch_id=str(batch.id),
+        status=batch.status,
+        merkle_root=batch.merkle_root,
+        tx_hash=batch.tx_hash,
+        chain_id=batch.chain_id,
+        block_number=chain_result.get("block_number") if chain_result else None,
+        confirmed_at=batch.confirmed_at.isoformat() if batch.confirmed_at else None,
+    )
+

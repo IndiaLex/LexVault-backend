@@ -112,7 +112,7 @@ def get_case_graph(
     ]
 
     edges = [
-        GraphEdge(**{"from": edge["from"], "to": edge["to"]})
+        GraphEdge(**edge)
         for edge in graph_dict["edges"]
     ]
 

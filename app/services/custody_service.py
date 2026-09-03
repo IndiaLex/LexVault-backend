@@ -109,7 +109,15 @@ def build_graph(events: List[CustodyEvent]) -> dict:
         nodes.append(node)
         lane_key = str(e.document_id) if e.document_id else "case"
         if lane_key in lanes and lanes[lane_key]:
-            edges.append({"from": lanes[lane_key][-1], "to": str(e.id)})
+            prev_id = lanes[lane_key][-1]
+            curr_id = str(e.id)
+            edges.append({
+                "id": f"edge-{prev_id}-{curr_id}",
+                "from": prev_id,
+                "to": curr_id,
+                "source": prev_id,
+                "target": curr_id,
+            })
         lanes.setdefault(lane_key, []).append(str(e.id))
 
     return {"nodes": nodes, "edges": edges}
